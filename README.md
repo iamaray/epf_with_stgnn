@@ -1,5 +1,9 @@
 # epf_with_stgnn
+
 Code implementing electricity price forecasting with a spatial-temporal graph neural network.
+
+# Model Architecture
+
 
 # Roadmap
 1. Implement simplified STGNN model on the data from three locations in the ERCOT market.
@@ -13,3 +17,4 @@ Code implementing electricity price forecasting with a spatial-temporal graph ne
 6. Train/test this on data and compare to simpler model.
 7. Present these results to Moyi.
 8. Implement the R-vine copula method of constructing adjacency matrix.
+
