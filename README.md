@@ -3,9 +3,13 @@ Code implementing electricity price forecasting with a spatial-temporal graph ne
 
 # Roadmap
 1. Implement simplified STGNN model on the data from three locations in the ERCOT market.
-2. Traint/test on the data.
-3. Present simplified model/performance to Moyi.
-4. Iterate model to level of complexity as presented in the MTGNN paper.
-5. Train/test this on data and compare to simpler model.
-6. Present these results to Moyi.
-7. Implement the R-vine copula method of constructing adjacency matrix.
+    - Graph Convolution module (GC)
+    - Temporal Convolution module (TC)
+    - Output module
+    - Trainer class with `train()` function
+3. Traint/test on the data.
+4. Present simplified model/performance to Moyi.
+5. Iterate model to level of complexity as presented in the MTGNN paper.
+6. Train/test this on data and compare to simpler model.
+7. Present these results to Moyi.
+8. Implement the R-vine copula method of constructing adjacency matrix.
