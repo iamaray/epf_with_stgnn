@@ -34,9 +34,15 @@ class GraphConvolution(nn.Module):
 
 
 class TemporalConvolution(nn.Module):
-    def __init__(self):
+    def __init__(self, num_channels, kernel_size=3):
         super(TemporalConvolution, self).__init__()
-        pass
+        self.conv = nn.Conv2d(num_channels, num_channels, (1, kernel_size), padding=(0, kernel_size//2))
+        self.inception_conv = nn.Conv2d(num_channels, num_channels, (1, kernel_size), padding=(0, kernel_size//2))
+        self.dilated_conv = nn.Conv2d(num_channels, num_channels, (1, kernel_size), padding=(0, kernel_size//2), dilation=2)
+    def forward(self, x):
+        inception_features = self.inception_conv(x)
+        dilated_features = self.dilated_conv(x)
+        return inception_features + dilated_features
 
 
 
@@ -46,10 +52,17 @@ class TemporalConvolution(nn.Module):
 
 
 class Output(nn.Module):
-    def __init__(self):
+    def __init__(self, num_nodes, in_features, out_features):
         super(Output, self).__init__()
         pass
+        self.num_nodes = num_nodes
+        self.in_features = in_features
+        self.out_features = out_features
+        self.fc = nn.Linear(num_nodes * in_features, out_features)
 
+    def forward(self, x):
+        x = x.view(x.size(0), -1) # Flatten the features across nodes
+        return self.fc(x)
 
 class LayerNorm(nn.Module):  # performs layer normalization
     __constants__ = ['normalized_shape', 'weight',
