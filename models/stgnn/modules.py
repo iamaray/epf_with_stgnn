@@ -34,17 +34,22 @@ class GraphConvolution(nn.Module):
 
 
 class TemporalConvolution(nn.Module):
-    def __init__(self, num_channels, kernel_size=3):
+    def __init__(self, in_features, out_features, dilation_factor=2):
         super(TemporalConvolution, self).__init__()
-        self.conv = nn.Conv2d(num_channels, num_channels, (1, kernel_size), padding=(0, kernel_size//2))
-        self.inception_conv = nn.Conv2d(num_channels, num_channels, (1, kernel_size), padding=(0, kernel_size//2))
-        self.dilated_conv = nn.Conv2d(num_channels, num_channels, (1, kernel_size), padding=(0, kernel_size//2), dilation=2)
-    def forward(self, x):
-        inception_features = self.inception_conv(x)
-        dilated_features = self.dilated_conv(x)
-        return inception_features + dilated_features
+        self.tconv = nn.ModuleList()
+        self.kernel_set = [2,3,6,7] # different kernel sizes
+        out_features = int(out_features/len(self.kernel_set)) # divide the total number of output channels to match with each kernel size
+        for kern in self.kernel_set:
+            self.tconv.append(nn.Conv2d(in_features, out_features, (1,kern), dilation=(1,dilation_factor)))
 
-
+    def forward(self, input):
+        x = []
+        for i in range(len(self.kernel_set)):
+            x.append(self.tconv[i](input))
+        for i in range(len(self.kernel_set)):
+            x[i] = x[i][...,-x[-1].size(3):]
+        x = torch.cat(x,dim=1)
+        return x
 
 """
     Details needed.
