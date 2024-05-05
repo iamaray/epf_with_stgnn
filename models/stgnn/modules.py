@@ -8,55 +8,58 @@ from __future__ import division
 from torch.nn import init
 import numbers
 
-"""
-    The Graph Convolution (GC) module is composed of two mix-hop propagation 
-    layers, one taking A and the other taking A^T. A mix-hop propagation layer 
-    performs a horizontal mix-hop operation to compute the successive hidden features
-    H^(k). It then feeds each of these into an MLP. The resultant output is then
-    aggregated via a weighted sum.
-"""
+from utils.general_utils import compute_a_tilde
 
 
 class GraphConvolution(nn.Module):
+    """
+        The Graph Convolution (GC) module is composed of two mix-hop propagation 
+        layers, one taking A and the other taking A^T. A mix-hop propagation layer 
+        performs a horizontal mix-hop operation to compute the successive hidden features
+        H^(k). It then feeds each of these into an MLP. The resultant output is then
+        aggregated via a weighted sum.
+    """
+
     def __init__(self):
         super(GraphConvolution, self).__init__()
         pass
 
 
-"""
-    The Temporal Convolution (TC) module performs inception convolution:
-        a concatenation of a series of 1-D convolution operations
-        given by equation (12) of Wu et. al.
-    And dilated convolution:
-        a summation given by equation (13) of Wu et. al.
-
-"""
-
-
 class TemporalConvolution(nn.Module):
+    """
+        The Temporal Convolution (TC) module performs inception convolution:
+            a concatenation of a series of 1-D convolution operations
+            given by equation (12) of Wu et. al.
+        And dilated convolution:
+            a summation given by equation (13) of Wu et. al.
+    """
+
     def __init__(self, in_features, out_features, dilation_factor=2):
         super(TemporalConvolution, self).__init__()
         self.tconv = nn.ModuleList()
-        self.kernel_set = [2,3,6,7] # different kernel sizes
-        out_features = int(out_features/len(self.kernel_set)) # divide the total number of output channels to match with each kernel size
+        self.kernel_set = [2, 3, 6, 7]  # different kernel sizes
+        # divide the total number of output channels to match with each kernel size
+        out_features = int(out_features/len(self.kernel_set))
         for kern in self.kernel_set:
-            self.tconv.append(nn.Conv2d(in_features, out_features, (1,kern), dilation=(1,dilation_factor)))
+            self.tconv.append(
+                nn.Conv2d(in_features, out_features, (1, kern), dilation=(1, dilation_factor)))
 
     def forward(self, input):
         x = []
         for i in range(len(self.kernel_set)):
             x.append(self.tconv[i](input))
         for i in range(len(self.kernel_set)):
-            x[i] = x[i][...,-x[-1].size(3):]
-        x = torch.cat(x,dim=1)
+            x[i] = x[i][..., -x[-1].size(3):]
+        x = torch.cat(x, dim=1)
         return x
 
-"""
-    Details needed.
-"""
+
 
 
 class Output(nn.Module):
+    """
+        Details needed.
+    """
     def __init__(self, num_nodes, in_features, out_features):
         super(Output, self).__init__()
         pass
@@ -66,8 +69,9 @@ class Output(nn.Module):
         self.fc = nn.Linear(num_nodes * in_features, out_features)
 
     def forward(self, x):
-        x = x.view(x.size(0), -1) # Flatten the features across nodes
+        x = x.view(x.size(0), -1)  # Flatten the features across nodes
         return self.fc(x)
+
 
 class LayerNorm(nn.Module):  # performs layer normalization
     __constants__ = ['normalized_shape', 'weight',
