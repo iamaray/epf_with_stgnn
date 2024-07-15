@@ -1,4 +1,3 @@
-
 from stgnn.layer_constr_helpers import *
 from stgnn.modules import *
 import torch
@@ -18,6 +17,31 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class STGNN(nn.Module):
+    """
+    Spatio-Temporal Graph Neural Network (STGNN) for time series forecasting.
+
+    Attributes:
+        num_layers (int): Number of layers in the model.
+        num_nodes (int): Number of nodes in the graph.
+        sequence_length (int): Length of the input sequence.
+        pred_length (int): Length of the prediction sequence.
+        use_graph_conv (bool): Flag to use graph convolution layers.
+        use_temp_conv (bool): Flag to use temporal convolution layers.
+        receptive_field (int): Receptive field of the network.
+        dropout (float): Dropout factor for the dropout layers.
+        input_conv (nn.Conv2d): Initial convolutional layer.
+        gc_layers (nn.ModuleList): List of graph convolution layers.
+        tc_layers (nn.ModuleList): List of temporal convolution layers.
+        skip_convs (nn.ModuleList): List of skip convolution layers.
+        layer_norms (nn.ModuleList): List of layer normalization layers.
+        start_skip (nn.Conv2d): Starting skip connection convolutional layer.
+        end_skip (nn.Conv2d): Ending skip connection convolutional layer.
+        output_conv_1 (nn.Conv2d): First output convolutional layer.
+        output_conv_2 (nn.Conv2d): Second output convolutional layer.
+        node_ind (torch.Tensor): Node indices for layer normalization.
+        mat_weights (list): List of weight parameters for graph convolution layers.
+    """
+
     def __init__(
         self,
         c_in: int = 14,
@@ -41,21 +65,24 @@ class STGNN(nn.Module):
         """
         Initializes the STGNN model.
 
-        Parameters:
-        Dependent on input data:
-        - c_in: Number of input channels (x.shape[1]).
-        - num_nodes: Number of nodes in the graph (x.shape[2], y.shape[2]).
-        - sequence_length: Length of the input sequence (x.shape[3]).
-
-        - residual_chans: Number of residual channels.
-        - conv_chans: Number of convolution channels.
-        - skip_chans: Number of skip channels.
-        - end_chans: Number of end channels.
-        - num_layers: Number of layers in the model.
-        - K, beta: Parameters for Graph Convolution layers.
-        - dilation_multiplier: Dilation multiplier for Temporal Convolution layers.
-        - pred_length: Length of the prediction (y.shape[1]).
-        - dropout_factor: Dropout factor for dropout function.
+        Args:
+            c_in (int): Number of input channels.
+            num_nodes (int): Number of nodes in the graph.
+            batch_size (int): Batch size.
+            sequence_length (int): Length of the input sequence.
+            residual_chans (int): Number of residual channels.
+            conv_chans (int): Number of convolution channels.
+            skip_chans (int): Number of skip channels.
+            end_chans (int): Number of end channels.
+            num_layers (int): Number of layers in the model.
+            K (int): Number of attention heads for graph convolution.
+            beta (float): Attention score scaling factor.
+            dilation_multiplier (int): Dilation multiplier for temporal convolution.
+            pred_length (int): Length of the prediction sequence.
+            dropout_factor (float): Dropout factor for dropout layers.
+            use_graph_conv (bool): Flag to use graph convolution layers.
+            use_temp_conv (bool): Flag to use temporal convolution layers.
+            default_device (str): Device to run the model on ('cpu' or 'cuda').
         """
         super(STGNN, self).__init__()
 
@@ -71,24 +98,20 @@ class STGNN(nn.Module):
         self.softmax = F.softmax
         self.dy_conv = nconv()
 
-        # Receptive field calculation
+        # Calculate the receptive field of the network
         kernel_size = 7
         self.receptive_field = int(1 + (kernel_size - 1) * (dilation_multiplier ** num_layers - 1) / (dilation_multiplier - 1)) \
             if dilation_multiplier > 1 \
             else num_layers * (kernel_size - 1) + 1
-        # self.final_sequence_length = sequence_length - self.receptive_field + 1
 
-        # Initialize dropout function
-        # self.dropout = nn.Dropout(dropout_factor)
         self.dropout = dropout_factor
 
-        # Initialize input convolution layer
+        # Initialize layers
         self.input_conv = nn.Conv2d(
             in_channels=c_in,
             out_channels=residual_chans,
             kernel_size=(1, 1))
 
-        # Initialize graph convolution modules
         self.gc_layers = _init_layers(
             num_layers=num_layers,
             K=K, beta=beta,
@@ -96,15 +119,12 @@ class STGNN(nn.Module):
             gc_c_out=residual_chans,
             gc_nconv=self.dy_conv)
 
-        # Intialize temporal convolution modules
         self.tc_layers = _init_layers(
             num_layers=num_layers,
             dilated_c_in=residual_chans,
             dilated_c_out=conv_chans,
             dilation_multiplier=dilation_multiplier)
 
-        # Initialize skip convolution modules and
-        # normalization layers
         self.skip_convs, self.layer_norms = _init_layers(
             seq_len=sequence_length,
             dilation_multiplier=dilation_multiplier,
@@ -116,65 +136,51 @@ class STGNN(nn.Module):
             skip_chans=skip_chans,
             residual_chans=residual_chans)
 
-        # Initialize starting skip convolution
         self.start_skip = nn.Conv2d(
             in_channels=c_in,
             out_channels=skip_chans,
-            kernel_size=(1, sequence_length
-                         if sequence_length > self.receptive_field
-                         else self.receptive_field),
+            kernel_size=(1, sequence_length if sequence_length >
+                         self.receptive_field else self.receptive_field),
             bias=True)
 
-        # Initialize ending skip convolution
         self.end_skip = nn.Conv2d(
             in_channels=residual_chans,
             out_channels=skip_chans,
-            kernel_size=(1, sequence_length - self.receptive_field + 1
-                         if sequence_length > self.receptive_field
-                         else 1), bias=True)
+            kernel_size=(1, sequence_length - self.receptive_field +
+                         1 if sequence_length > self.receptive_field else 1),
+            bias=True)
 
-        # Initialize the first output convolution layer
         self.output_conv_1 = nn.Conv2d(
             in_channels=skip_chans,
             out_channels=end_chans,
             kernel_size=(1, 1))
 
-        # Initialize the second output convolution layer
         self.output_conv_2 = nn.Conv2d(
             in_channels=end_chans,
             out_channels=pred_length,
             kernel_size=(1, 1))
 
-        # Node indices to be used in layer norms
         self.node_ind = torch.arange(num_nodes)
 
         self.mat_weights = []
-
         for i in range(self.num_layers):
-            # tup_l = (nn.Parameter(torch.randn((batch_size, num_nodes, num_nodes, sequence_length - 6 * (i + 1)))),
-            #          nn.Parameter(torch.randn((batch_size, num_nodes, num_nodes, sequence_length - 6 * (i + 1)))))
-
-            tup_l = (nn.Parameter(torch.randn((batch_size, num_nodes, num_nodes))),
-                     nn.Parameter(torch.randn((batch_size, num_nodes, num_nodes))))
+            tup_l = (
+                nn.Parameter(torch.randn((batch_size, num_nodes, num_nodes))),
+                nn.Parameter(torch.randn((batch_size, num_nodes, num_nodes)))
+            )
             self.mat_weights.append(tup_l)
 
     def forward(self, data: Data):
         """
         Forward pass of the STGNN model.
 
-        Parameters:
-        - data (torch_geometric.data.Data): Input data containing node features and adjacency matrix.
+        Args:
+            data (torch_geometric.data.Data): Input data containing node features and adjacency matrix.
 
         Returns:
-        - torch.Tensor [batch_size, prediction_length, num_nodes]: Predicted output.
+            torch.Tensor: Predicted output of shape [batch_size, prediction_length, num_nodes].
         """
-
-        # Extract the feature tensor and adjacency matrix from data input.
-        # x: torch.Tensor [batch_size, num_features, num_nodes, sequence_length]
         input = data.x
-        # x = torch.transpose(x, 1, 2)
-        # adj: [num_nodes, num_nodes]
-        # adj = data.edge_attr
 
         if self.sequence_length < self.receptive_field:
             input = F.pad(input, (self.receptive_field -
@@ -190,17 +196,13 @@ class STGNN(nn.Module):
             if self.use_temp_conv:
                 x = self.tc_layers[i](x)
                 x = F.dropout(x, self.dropout, training=self.training)
-
                 s = x
                 s = self.skip_convs[i](s)
                 skip = s + skip
 
             if self.use_graph_conv:
-                adj = self.softmax(
-                    self.relu(
-                        # self.dy_conv(self.mat_weights[i][0], self.mat_weights[i][1].transpose(1,2)))
-                        torch.bmm(self.mat_weights[i][0], self.mat_weights[i][1].transpose(1, 2))), dim=-1)
-
+                adj = self.softmax(self.relu(torch.bmm(
+                    self.mat_weights[i][0], self.mat_weights[i][1].transpose(1, 2))), dim=-1)
                 if not self.use_temp_conv:
                     if x.shape[1] != self.gc_layers[i].mh_1.mlp.mlp.in_channels // self.gc_layers[i].mh_1.K:
                         adjust_conv = nn.Conv2d(
@@ -223,9 +225,7 @@ class STGNN(nn.Module):
 
         if self.use_graph_conv and not self.use_temp_conv:
             x = x.permute(0, 2, 1, 3)
-
             x = x.contiguous().view(x.size(0), x.size(1), x.size(2) * x.size(3))
-
             x = x[:, :, :self.pred_length]
         else:
             x = x.squeeze(3)
@@ -246,7 +246,26 @@ def construct_STGNN(
         dropout_factor: float = 0.2,
         use_graph_conv=True,
         use_temp_conv=True) -> STGNN:
+    """
+    Constructs and initializes an STGNN model based on the provided data.
 
+    Args:
+        data (torch_geometric.data.Data): Input data containing node features and adjacency matrix.
+        residual_chans (int): Number of residual channels.
+        conv_chans (int): Number of convolution channels.
+        skip_chans (int): Number of skip channels.
+        end_chans (int): Number of end channels.
+        num_layers (int): Number of layers in the model.
+        K (int): Number of attention heads for graph convolution.
+        beta (float): Attention score scaling factor.
+        dilation_multiplier (int): Dilation multiplier for temporal convolution.
+        dropout_factor (float): Dropout factor for dropout layers.
+        use_graph_conv (bool): Flag to use graph convolution layers.
+        use_temp_conv (bool): Flag to use temporal convolution layers.
+
+    Returns:
+        STGNN: Initialized STGNN model.
+    """
     batch_size, c_in, num_nodes, sequence_length = data.x.shape
     _, pred_length, _ = data.y.shape
 
