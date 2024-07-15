@@ -13,6 +13,7 @@ import pandas as pd
 from torch.autograd import Variable
 import math
 import modules
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
