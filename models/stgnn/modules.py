@@ -1,28 +1,98 @@
+from __future__ import division
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 from torch.autograd import Variable
-from __future__ import division
 from torch.nn import init
 import numbers
+import os
+import sys
+# from utils.general_utils import compute_a_tilde
 
-from utils.general_utils import compute_a_tilde
+# sys.path.insert(0, os.path.abspath(".."))
+import utils.general_utils as gutils
+
+
+class nconv(nn.Module):
+    def __init__(self):
+        super(nconv, self).__init__()
+
+    def forward(self, x, A):
+        # Adjusted einsum to handle batch dimension in A
+        x = torch.einsum('ncvl,nvw->ncvl', (x, A))
+        return x.contiguous()
+
+
+class MixPropMLP(nn.Module):
+    def __init__(self, c_in, c_out, bias=True):
+        super(MixPropMLP, self).__init__()
+
+        self.mlp = torch.nn.Conv2d(
+            c_in, c_out, kernel_size=(1, 1), padding=(0, 0), stride=(1, 1), bias=bias)
+
+    def forward(self, x):
+        return self.mlp(x)
+
+
+class SingleMixHop(nn.Module):
+    def __init__(
+            self,
+            K,
+            beta,
+            c_in,
+            c_out,
+            nconv=nconv()):
+        super(SingleMixHop, self).__init__()
+        self.K = K
+        self.beta = beta
+        self.nconv = nconv
+        self.mlp = MixPropMLP(c_in * K, c_out).to('cuda')
+
+    def _init_weights(self, weight_shape):
+        weights = []
+        for k in range(self.K):
+            w_k = nn.Parameter(torch.randn(weight_shape)).to('cuda')
+            w_k.requires_grad = True
+            weights.append(w_k)
+        return torch.stack(weights)
+
+    def _prop_step(self, x, adj, mlp=None):
+        h_in = x.to('cuda')
+        curr_hops = [h_in]
+        for k in range(1, self.K):
+            curr_hops.append(
+                self.beta * h_in + (1 - self.beta)
+                * self.nconv(curr_hops[k-1], adj))
+
+        return torch.cat(curr_hops, dim=1)
+
+    def _selection_step(self, curr_hops):
+        # h_out = torch.einsum('awbik,awbik->awbik', curr_hops, self.W).sum(dim=0)
+        h_out = self.mlp(curr_hops)
+        return h_out
+
+    def forward(self, x, adj):
+        adj = compute_a_tilde(adj).to('cuda')
+        curr_hops = self._prop_step(x, adj, self.mlp)
+        h_out = self._selection_step(curr_hops)
+
+        return h_out
 
 
 class GraphConvolution(nn.Module):
-    """
-        The Graph Convolution (GC) module is composed of two mix-hop propagation 
-        layers, one taking A and the other taking A^T. A mix-hop propagation layer 
-        performs a horizontal mix-hop operation to compute the successive hidden features
-        H^(k). It then feeds each of these into an MLP. The resultant output is then
-        aggregated via a weighted sum.
-    """
-
-    def __init__(self):
+    def __init__(self, K, beta, c_in, c_out, nconv):
         super(GraphConvolution, self).__init__()
-        pass
+
+        self.mh_1 = SingleMixHop(K, beta, c_in, c_out, nconv)
+        self.mh_2 = SingleMixHop(K, beta, c_in, c_out, nconv)
+
+    def forward(self, x, adj):
+        out_1 = self.mh_1(x, adj).to('cuda')
+        out_2 = self.mh_2(x, torch.transpose(adj, 1, 2)).to('cuda')
+
+        return out_1 + out_2
 
 
 class TemporalConvolution(nn.Module):
@@ -54,23 +124,25 @@ class TemporalConvolution(nn.Module):
         return x
 
 
-
-
 class Output(nn.Module):
     """
-        Details needed.
+        A class that performs a 1D convolution to transform the input tensor.
     """
-    def __init__(self, num_nodes, in_features, out_features):
+
+    def __init__(self, in_channels, out_channels):
         super(Output, self).__init__()
-        pass
-        self.num_nodes = num_nodes
-        self.in_features = in_features
-        self.out_features = out_features
-        self.fc = nn.Linear(num_nodes * in_features, out_features)
+        # Use the provided input and output dimensions
+        self.conv1 = nn.Conv1d(in_channels=in_channels,
+                               out_channels=out_channels, kernel_size=1)
 
     def forward(self, x):
-        x = x.view(x.size(0), -1)  # Flatten the features across nodes
-        return self.fc(x)
+        # [batch_size, in_channels, length] -> [batch_size, length, in_channels]
+        x = x.permute(2, 1)
+        x = self.conv1(x)
+        # [batch_size, new_length, in_channels] -> [batch_size, in_channels, new_length]
+        x = x.permute(2, 1)
+
+        return x
 
 
 class LayerNorm(nn.Module):  # performs layer normalization
