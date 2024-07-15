@@ -9,15 +9,8 @@ def form_training_pairs(
         step_hours: int = 24,
         pred_contraction: int = 6,
         split_hour: int = 6888):
-    # The data is composed of hourly data covering 434 days.
-
-    # The training pairs (x,y) are formed by taking the x to be
-    # a week's worth of data and y to be the preceeding day's worth of
-    # day-ahead price data. I.e., x is a [9, 3, 168] tensor, and y is a [24, 3]
-    # tensor.
 
     window = window_hours  # hours
-    # start = window + 24
 
     step = step_hours  # hours
     stop = int(split_hour / step)
