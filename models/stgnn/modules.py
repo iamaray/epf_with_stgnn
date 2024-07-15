@@ -15,64 +15,84 @@ import sys
 import utils.general_utils as gutils
 
 
+class nconv(nn.Module):
+    def __init__(self):
+        super(nconv, self).__init__()
+
+    def forward(self, x, A):
+        # Adjusted einsum to handle batch dimension in A
+        x = torch.einsum('ncvl,nvw->ncvl', (x, A))
+        return x.contiguous()
+
+
+class MixPropMLP(nn.Module):
+    def __init__(self, c_in, c_out, bias=True):
+        super(MixPropMLP, self).__init__()
+
+        self.mlp = torch.nn.Conv2d(
+            c_in, c_out, kernel_size=(1, 1), padding=(0, 0), stride=(1, 1), bias=bias)
+
+    def forward(self, x):
+        return self.mlp(x)
+
+
 class SingleMixHop(nn.Module):
-    def __init__(self, K, beta, adj):
+    def __init__(
+            self,
+            K,
+            beta,
+            c_in,
+            c_out,
+            nconv=nconv()):
         super(SingleMixHop, self).__init__()
         self.K = K
         self.beta = beta
-        self.adj = gutils.compute_a_tilde(adj)
-        self.W = self._init_weights()
-        self._init_weights()
+        self.nconv = nconv
+        self.mlp = MixPropMLP(c_in * K, c_out).to('cuda')
 
-    def _init_weights(self):
+    def _init_weights(self, weight_shape):
         weights = []
         for k in range(self.K):
-            w_k = nn.Parameter(torch.randn(data.x.shape[0], data.x.shape[1]))
+            w_k = nn.Parameter(torch.randn(weight_shape)).to('cuda')
             w_k.requires_grad = True
             weights.append(w_k)
         return torch.stack(weights)
 
-    def _prop_step(self, past_hops):
-        h_in = past_hops[-1]  # output of last pass
-        h_0 = h_in
-        curr_hops = [h_0]
+    def _prop_step(self, x, adj, mlp=None):
+        h_in = x.to('cuda')
+        curr_hops = [h_in]
         for k in range(1, self.K):
             curr_hops.append(
-                torch.Tensor(self.beta * h_in + (1 - self.beta) * curr_hops[k-1]))
+                self.beta * h_in + (1 - self.beta)
+                * self.nconv(curr_hops[k-1], adj))
 
-        return torch.stack(curr_hops)
+        return torch.cat(curr_hops, dim=1)
 
     def _selection_step(self, curr_hops):
-        h_out = torch.einsum('bik,bik->bik', curr_hops, self.W).sum(dim=0)
+        # h_out = torch.einsum('awbik,awbik->awbik', curr_hops, self.W).sum(dim=0)
+        h_out = self.mlp(curr_hops)
         return h_out
 
-    def forward(self, past_hops):
-        curr_hops = self._prop_step(past_hops)
-        # curr_hops = torch.Tensor(curr_hops)
+    def forward(self, x, adj):
+        adj = compute_a_tilde(adj).to('cuda')
+        curr_hops = self._prop_step(x, adj, self.mlp)
         h_out = self._selection_step(curr_hops)
 
         return h_out
 
 
 class GraphConvolution(nn.Module):
-    """
-        The Graph Convolution (GC) module is composed of two mix-hop propagation
-        layers, one taking A and the other taking A^T. A mix-hop propagation layer
-        performs a horizontal mix-hop operation to compute the successive hidden features
-        H^(k). It then feeds each of these into an MLP. The resultant output is then
-        aggregated via a weighted sum.
-    """
-
-    def __init__(self, K, beta, adj):
+    def __init__(self, K, beta, c_in, c_out, nconv):
         super(GraphConvolution, self).__init__()
 
-        self.mh_1 = SingleMixHop(K, beta, adj)
-        self.mh_2 = SingleMixHop(K, beta, torch.transpose(adj, 0, 1))
+        self.mh_1 = SingleMixHop(K, beta, c_in, c_out, nconv)
+        self.mh_2 = SingleMixHop(K, beta, c_in, c_out, nconv)
 
-    def forward(self, past_hops):
-        out_1 = self.mh_1(past_hops)
-        out_2 = self.mh_2(past_hops)
-        return torch.stack([out_1, out_2]).sum(dim=0)
+    def forward(self, x, adj):
+        out_1 = self.mh_1(x, adj).to('cuda')
+        out_2 = self.mh_2(x, torch.transpose(adj, 1, 2)).to('cuda')
+
+        return out_1 + out_2
 
 
 class TemporalConvolution(nn.Module):
