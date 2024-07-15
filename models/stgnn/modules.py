@@ -95,24 +95,19 @@ class GraphConvolution(nn.Module):
         return out_1 + out_2
 
 
-class TemporalConvolution(nn.Module):
-    """
-        The Temporal Convolution (TC) module performs inception convolution:
-            a concatenation of a series of 1-D convolution operations
-            given by equation (12) of Wu et. al.
-        And dilated convolution:
-            a summation given by equation (13) of Wu et. al.
-    """
-
-    def __init__(self, in_features, out_features, dilation_factor=2):
-        super(TemporalConvolution, self).__init__()
+class DilatedInception(nn.Module):
+    def __init__(
+            self,
+            cin,
+            cout,
+            dilation_factor=2):
+        super(DilatedInception, self).__init__()
         self.tconv = nn.ModuleList()
-        self.kernel_set = [2, 3, 6, 7]  # different kernel sizes
-        # divide the total number of output channels to match with each kernel size
-        out_features = int(out_features/len(self.kernel_set))
+        self.kernel_set = [2, 3, 6, 7]
+        cout = int(cout/len(self.kernel_set))
         for kern in self.kernel_set:
             self.tconv.append(
-                nn.Conv2d(in_features, out_features, (1, kern), dilation=(1, dilation_factor)))
+                nn.Conv2d(cin, cout, (1, kern), dilation=(1, dilation_factor))).to('cuda')
 
     def forward(self, input):
         x = []
@@ -120,32 +115,35 @@ class TemporalConvolution(nn.Module):
             x.append(self.tconv[i](input))
         for i in range(len(self.kernel_set)):
             x[i] = x[i][..., -x[-1].size(3):]
+
         x = torch.cat(x, dim=1)
-        return x
-
-
-class Output(nn.Module):
-    """
-        A class that performs a 1D convolution to transform the input tensor.
-    """
-
-    def __init__(self, in_channels, out_channels):
-        super(Output, self).__init__()
-        # Use the provided input and output dimensions
-        self.conv1 = nn.Conv1d(in_channels=in_channels,
-                               out_channels=out_channels, kernel_size=1)
-
-    def forward(self, x):
-        # [batch_size, in_channels, length] -> [batch_size, length, in_channels]
-        x = x.permute(2, 1)
-        x = self.conv1(x)
-        # [batch_size, new_length, in_channels] -> [batch_size, in_channels, new_length]
-        x = x.permute(2, 1)
 
         return x
 
 
-class LayerNorm(nn.Module):  # performs layer normalization
+class TemporalConvolution(nn.Module):
+    def __init__(self, cin, cout, dilation_factor=2):
+        super(TemporalConvolution, self).__init__()
+        self.dilated_inception_1 = DilatedInception(
+            cin,
+            cout,
+            dilation_factor)
+        self.dilated_inception_2 = DilatedInception(
+            cin,
+            cout,
+            dilation_factor)
+
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+
+    def forward(self, input):
+        gate = self.relu(self.dilated_inception_1(input))
+        filter = self.tanh(self.dilated_inception_2(input))
+        res = gate * filter
+        return res
+
+
+class LayerNorm(nn.Module):
     __constants__ = ['normalized_shape', 'weight',
                      'bias', 'eps', 'elementwise_affine']
 
@@ -157,11 +155,13 @@ class LayerNorm(nn.Module):  # performs layer normalization
         self.eps = eps
         self.elementwise_affine = elementwise_affine
         if self.elementwise_affine:
-            self.weight = nn.Parameter(torch.Tensor(*normalized_shape))
-            self.bias = nn.Parameter(torch.Tensor(*normalized_shape))
+            self.weight = nn.Parameter(
+                torch.Tensor(*normalized_shape)).to('cuda')
+            self.bias = nn.Parameter(
+                torch.Tensor(*normalized_shape)).to('cuda')
         else:
-            self.register_parameter('weight', None)
-            self.register_parameter('bias', None)
+            self.register_parameter('weight', None).to('cuda')
+            self.register_parameter('bias', None).to('cuda')
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -170,10 +170,11 @@ class LayerNorm(nn.Module):  # performs layer normalization
             init.zeros_(self.bias)
 
     def forward(self, input, idx):
-        if self.elementwise_affine:
-            return F.layer_norm(input, tuple(input.shape[1:]), self.weight[:, idx, :], self.bias[:, idx, :], self.eps)
-        else:
-            return F.layer_norm(input, tuple(input.shape[1:]), self.weight, self.bias, self.eps)
+        return F.layer_norm(input, tuple(input.shape[1:]), self.weight, self.bias, self.eps)
+        # if self.elementwise_affine:
+        # return F.layer_norm(input, tuple(input.shape[1:]), self.weight[:,idx,:], self.bias[:,idx,:], self.eps)
+        # else:
+        # return F.layer_norm(input, tuple(input.shape[1:]), self.weight, self.bias, self.eps)
 
     def extra_repr(self):
         return '{normalized_shape}, eps={eps}, ' \
