@@ -5,12 +5,12 @@ import pandas as pd
 import torch
 
 
-class DataTransformation:
+class Operation:
     def __init__(
             self,
             col_operation_func: None,
-            col_operation_name: str = 'Operation',
-            inverse_func: None = None):
+            inverse_operation_func: None,
+            col_operation_name: str):
 
         # invertible column-wise function
         self.col_operation_func = col_operation_func
@@ -23,6 +23,16 @@ class DataTransformation:
         self.op_cnt += 1
         self.ret.append(ret_data)
         self.op_history.append(f'{self.col_operation_name}_{self.op_cnt}')
+
+
+class DataTransformation(Operation):
+    def __init__(
+            self,
+            col_operation_func: None,
+            col_operation_name: str = 'Operation',
+            inverse_func: None = None):
+
+        super().__init__(col_operation_func, col_operation_name, inverse_func)
 
     def __call__(
             self,
@@ -38,7 +48,7 @@ class DataTransformation:
         return self.ret[-1]
 
 
-class ColumnOperator(DataTransformation):
+class ColumnCombination(Operation):
     def __init__(
             self,
             col_operation_func: None = None,
@@ -53,12 +63,14 @@ class ColumnOperator(DataTransformation):
 
     def _record(self, ret_data):
         super()._record(ret_data)
-        # self.ret[-1].rename(
-        #     columns={self.desired_cols[0]: self.col_operation_name}, inplace=True)
+        if not keep_col_name:
+            self.ret[-1].rename(
+                columns={self.desired_cols[0]: self.col_operation_name}, inplace=True)
 
     def __call__(
             self,
-            data: pd.DataFrame):
+            data: pd.DataFrame,
+            keep_col_name: bool=True):
         curr_data = data.copy(deep=True)
 
         self.col_operation_func(curr_data, self.desired_cols)
