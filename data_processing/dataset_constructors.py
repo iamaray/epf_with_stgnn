@@ -5,6 +5,8 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.data import Dataset
 from torch_geometric.data import Data
 
+from data_processing.construct_pairs import *
+
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 

@@ -1,3 +1,7 @@
+import numpy as np
+import pandas as pd
+
+
 def calc_col_mad(df: pd.DataFrame, col_name: str):
     col = df[col_name]
     mad = (1/len(col)) * np.sum(np.abs(col - col.mean()))

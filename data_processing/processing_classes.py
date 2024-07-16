@@ -29,10 +29,12 @@ class DataTransformation(Operation):
     def __init__(
             self,
             col_operation_func: None,
-            col_operation_name: str = 'Operation',
+            col_operation_name: str = '',
             inverse_func: None = None):
 
         super().__init__(col_operation_func, col_operation_name, inverse_func)
+        self.col_operation_name = col_operation_name
+        # self.col_operation_func = col_operation_func
 
     def __call__(
             self,
@@ -58,10 +60,10 @@ class ColumnCombination(Operation):
 
         super().__init__(col_operation_func, col_operation_name, inverse_func)
 
-        self.col_operation_name
+        self.col_operation_name = col_operation_name
         self.desired_cols = desired_cols
 
-    def _record(self, ret_data):
+    def _record(self, ret_data, keep_col_name):
         super()._record(ret_data)
         if not keep_col_name:
             self.ret[-1].rename(
@@ -70,12 +72,12 @@ class ColumnCombination(Operation):
     def __call__(
             self,
             data: pd.DataFrame,
-            keep_col_name: bool=True):
+            keep_col_name: bool = True):
         curr_data = data.copy(deep=True)
 
         self.col_operation_func(curr_data, self.desired_cols)
 
-        self._record(curr_data)
+        self._record(curr_data, keep_col_name)
 
         return self.ret[-1]
 
@@ -97,7 +99,6 @@ class OperationHistory:
 
     def _to_dict(self):
         for op in self.seq:
-            print(len(op.ret))
             self.history_dict[op.col_operation_name] = op.ret[-1]
 
     def __call__(self, op_names: list, ret_hist: list):
@@ -113,32 +114,18 @@ class OperationSequence:
             self,
             seq: list = []):
         self.seq = seq
-
-        # if len(self.seq) > 0:
-        #   for i, op in enumerate(seq):
-        #     if type(op) == OperationSequence:
-        #       del(self.seq[i])
-        #       self.seq.insert(i - 1, op.seq)
-
-        # self.op_history = []
-        # self.ret = []
         self.history = OperationHistory([])
 
     def __call__(self, df: pd.DataFrame, desired_cols):
         ret = df
         if len(self.seq) > 0:
             for func in self.seq:
-                # print(type(self.ret[-1].ret[-1]))
                 try:
                     if type(func) == DataTransformation:
                         ret = func(ret, desired_cols)
-                        # self.ret.append(func)
-                        # self.op_history.extend(func.op_history)
 
-                    elif type(func) == ColumnOperator:
+                    elif type(func) == ColumnCombination:
                         ret = func(ret)
-                        # self.ret.append(func)
-                        # self.op_history.extend(func.op_history)
 
                 except:
                     raise Exception("Invalid element in result chain")
