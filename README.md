@@ -1,6 +1,6 @@
 # epf_with_stgnn
 
-A spatio-temporal graph neural network (STGNN) for multivariate time series forecasting (MTF) applied specifically to the task of real-time market electricity price forecasting (RTM-EPF).
+A spatio-temporal graph neural network (STGNN) for multivariate time series forecasting (MSTF) applied specifically to the task of real-time market electricity price forecasting (RTM-EPF).
 
 # Model Architecture
 
