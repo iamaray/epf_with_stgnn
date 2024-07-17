@@ -170,6 +170,13 @@ class STGNN(nn.Module):
             )
             self.mat_weights.append(tup_l)
 
+        self.adjust_convs = nn.ModuleList([
+            nn.Conv2d(
+                in_channels=residual_chans,
+                out_channels=conv_chans // K,
+                kernel_size=(1, 1)
+            ).to('cuda') for _ in range(num_layers)])
+
     def forward(self, data: Data):
         """
         Forward pass of the STGNN model.
@@ -205,9 +212,7 @@ class STGNN(nn.Module):
                     self.mat_weights[i][0], self.mat_weights[i][1].transpose(1, 2))), dim=-1)
                 if not self.use_temp_conv:
                     if x.shape[1] != self.gc_layers[i].mh_1.mlp.mlp.in_channels // self.gc_layers[i].mh_1.K:
-                        adjust_conv = nn.Conv2d(
-                            x.shape[1], self.gc_layers[i].mh_1.mlp.mlp.in_channels // self.gc_layers[i].mh_1.K, kernel_size=(1, 1)).to('cuda')
-                        x = adjust_conv(x)
+                        x = self.adjust_convs[i](x)
                 x = self.gc_layers[i](x, adj)
 
             if self.use_graph_conv and self.use_temp_conv:
