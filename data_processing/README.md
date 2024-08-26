@@ -40,3 +40,4 @@ In all of these files, please check the comments/docstrings for further details.
 1.  Bring code up-to-date with our Jupyter notebooks.
 2.  Separate adjacency matrix construction functionality from `form_training_pairs()`.
 3.  (Possibly) separate curriculum functionality from `DatasetConstructor`. Although, it may be better to just keep this how it is.
+4.  For the operations, include the reverse normalization as part of the `Operation` class to trivialize the reverse normalization process.
