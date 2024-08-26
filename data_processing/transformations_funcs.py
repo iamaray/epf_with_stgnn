@@ -11,10 +11,8 @@ def calc_col_mad(df: pd.DataFrame, col_name: str):
 def log_transform_col(df: pd.DataFrame, col_name: str):
     col = df[col_name].to_numpy()
     sgn = np.where(col < 0, -1, 1)
-    # df[col_name] = 1 + np.abs(df[col_name])
+    df[col_name] = 1 + np.abs(df[col_name])
     df[col_name] = sgn * np.log(df[col_name])
-    df[col_name] = np.log(df[col_name])
-    # multiply sign in front of log
 
 
 def log_transform_inverse(df: pd.DataFrame, col_name: str, data):
