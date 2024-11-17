@@ -1,7 +1,8 @@
 import torch
 import torch.optim as optim
 import numpy as np
-from trainers.error_metrics import *
+from .evaluation import *
+
 
 class PredLenCurriculumTrainer:
     """
@@ -26,9 +27,11 @@ class PredLenCurriculumTrainer:
         trained_model (torch.nn.Module): The most recently trained model.
         noise_mult (list of float): Multipliers for adding noise to the data.
     """
+
     def __init__(self, models, epochs=60, lr=1e-3, weight_decay=1e-4, grad_clip=5, noise_mult=[0.05, 0.10, 0.15, 0.20, 0.0], criterion=masked_mae):
         self.models = models
-        self.optimizers = [optim.Adam(m.parameters(), lr=lr, weight_decay=weight_decay) for m in models]
+        self.optimizers = [optim.Adam(
+            m.parameters(), lr=lr, weight_decay=weight_decay) for m in models]
         self.epochs = epochs
         self.criterion = criterion
         self.losses = np.array([])
@@ -55,11 +58,13 @@ class PredLenCurriculumTrainer:
             curr_state = model.state_dict()
             if i > 0:
                 prev_state = self.models[i - 1].state_dict()
-                filtered_state = {k: v for k, v in prev_state.items() if curr_state[k].shape == prev_state[k].shape}
+                filtered_state = {k: v for k, v in prev_state.items(
+                ) if curr_state[k].shape == prev_state[k].shape}
                 curr_state.update(filtered_state)
                 model.load_state_dict(curr_state)
 
-            print(f"\n====================== TRAINING ON DATASET {i} ======================")
+            print(
+                f"\n====================== TRAINING ON DATASET {i} ======================")
             for epoch in range(self.epochs):
                 running_loss = 0.0
                 for data in train_loader:
@@ -79,7 +84,8 @@ class PredLenCurriculumTrainer:
                     loss.backward()
 
                     if self.grad_clip is not None:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), self.grad_clip)
+                        torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), self.grad_clip)
 
                     optimizer.step()
                     running_loss += loss.item()
@@ -88,7 +94,8 @@ class PredLenCurriculumTrainer:
                 self.losses = np.append(self.losses, avg_loss)
 
                 if (epoch + 1) % 10 == 0:
-                    print(f'Epoch {epoch + 1} of Dataset {i}, Loss: {avg_loss}')
+                    print(
+                        f'Epoch {epoch + 1} of Dataset {i}, Loss: {avg_loss}')
 
             self.trained_model = self.models[i]
             self.test(test_loader)
@@ -127,7 +134,8 @@ class PredLenCurriculumTrainer:
         print(f'Test Loss: {test_loss}')
 
         mse, mae, mape_val = self._calculate_errors(targets, predictions)
-        print(f"Final Testing Metrics, by Location (Houston, North, Panhandle):\nMSE: {mse}\nMAE: {mae}\nMAPE: {mape_val}%")
+        print(
+            f"Final Testing Metrics, by Location (Houston, North, Panhandle):\nMSE: {mse}\nMAE: {mae}\nMAPE: {mape_val}%")
 
         return mse, mae, mape_val
 
@@ -152,7 +160,8 @@ class PredLenCurriculumTrainer:
             targets.extend(self._process_outputs(data.y))
 
         mse, mae, mape_val = self._calculate_errors(targets, predictions)
-        print(f"Final Training Metrics, by Location (Houston, North, Panhandle):\nMSE: {mse}\nMAE: {mae}\nMAPE: {mape_val}%")
+        print(
+            f"Final Training Metrics, by Location (Houston, North, Panhandle):\nMSE: {mse}\nMAE: {mae}\nMAPE: {mape_val}%")
 
     def _process_outputs(self, outputs):
         """

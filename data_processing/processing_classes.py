@@ -1,8 +1,9 @@
-from data_processing.transformations_funcs import *
+from .transformations_funcs import *
 
 import numpy as np
 import pandas as pd
 import torch
+# from sklearn.pipeline import Pipeline
 
 
 class Operation:
@@ -48,38 +49,7 @@ class DataTransformation(Operation):
         self._record(curr_data)
 
         return self.ret[-1]
-
-
-class ColumnCombination(Operation):
-    def __init__(
-            self,
-            col_operation_func: None = None,
-            col_operation_name: str = '',
-            inverse_func: None = None,
-            desired_cols: list = []):
-
-        super().__init__(col_operation_func, col_operation_name, inverse_func)
-
-        self.col_operation_name = col_operation_name
-        self.desired_cols = desired_cols
-
-    def _record(self, ret_data, keep_col_name):
-        super()._record(ret_data)
-        if not keep_col_name:
-            self.ret[-1].rename(
-                columns={self.desired_cols[0]: self.col_operation_name}, inplace=True)
-
-    def __call__(
-            self,
-            data: pd.DataFrame,
-            keep_col_name: bool = True):
-        curr_data = data.copy(deep=True)
-
-        self.col_operation_func(curr_data, self.desired_cols)
-
-        self._record(curr_data, keep_col_name)
-
-        return self.ret[-1]
+x
 
 
 class OperationHistory:

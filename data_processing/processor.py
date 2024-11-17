@@ -1,12 +1,21 @@
+import numpy as np
+import pandas as pd
+from sklearn.pipeline import Pipeline
+
+from .processing_classes import *
+from .transformations_funcs import *
+
+
 class PreprocessData:
     """
         Class to coordinate preprocessing operations on data
     """
+
     def __init__(
         self,
         generate_time_dummies: bool = True,
         quantile_cutoff: float = 1.0,
-        op_list: OperationSequence = OperationSequence([])
+        op_list: Pipeline = Pipeline([])
     ):
 
         self.generate_time_dummies = generate_time_dummies
