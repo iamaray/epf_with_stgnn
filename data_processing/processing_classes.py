@@ -1,55 +1,10 @@
-from .transformations_funcs import *
+# from .transformations_funcs import *
 
 import numpy as np
 import pandas as pd
 import torch
+from sklearn.base import BaseEstimator, TransformerMixin
 # from sklearn.pipeline import Pipeline
-
-
-class Operation:
-    def __init__(
-            self,
-            col_operation_func: None,
-            inverse_operation_func: None,
-            col_operation_name: str):
-
-        # invertible column-wise function
-        self.col_operation_func = col_operation_func
-        self.ret = []
-        self.op_history = []
-        self.col_operation_name = col_operation_name
-        self.op_cnt = 0
-
-    def _record(self, ret_data):
-        self.op_cnt += 1
-        self.ret.append(ret_data)
-        self.op_history.append(f'{self.col_operation_name}_{self.op_cnt}')
-
-
-class DataTransformation(Operation):
-    def __init__(
-            self,
-            col_operation_func: None,
-            col_operation_name: str = '',
-            inverse_func: None = None):
-
-        super().__init__(col_operation_func, col_operation_name, inverse_func)
-        self.col_operation_name = col_operation_name
-        # self.col_operation_func = col_operation_func
-
-    def __call__(
-            self,
-            data: pd.DataFrame,
-            desired_cols: list):
-        curr_data = data.copy(deep=True)
-
-        for name in desired_cols:
-            self.col_operation_func(curr_data, name)
-
-        self._record(curr_data)
-
-        return self.ret[-1]
-x
 
 
 class OperationHistory:
@@ -79,24 +34,61 @@ class OperationHistory:
         return ret_dict
 
 
-class OperationSequence:
+class Operation(BaseEstimator, TransformerMixin):
     def __init__(
             self,
-            seq: list = []):
-        self.seq = seq
-        self.history = OperationHistory([])
+            col_operation_func=None,
+            inverse_operation_func=None,
+            col_operation_name='',
+            desired_cols=None,
+            logging=False,
+            op_history=None):
 
-    def __call__(self, df: pd.DataFrame, desired_cols):
-        ret = df
-        if len(self.seq) > 0:
-            for func in self.seq:
-                try:
-                    if type(func) == DataTransformation:
-                        ret = func(ret, desired_cols)
+        self.col_operation_func = col_operation_func
+        self.inverse_operation_func = inverse_operation_func
+        self.col_operation_name = col_operation_name
+        self.desired_cols = desired_cols
+        self.logging = logging
+        self.ret = []
+        self.op_history = op_history
+        self.op_cnt = 0
 
-                    elif type(func) == ColumnCombination:
-                        ret = func(ret)
+    def _record(self, ret_data):
+        if self.logging:
+            self.ret.append(ret_data)
+            self.op_cnt += 1
+            self.ret.extend([self])
 
-                except:
-                    raise Exception("Invalid element in result chain")
-            self.history.extend(self.seq)
+
+class DataTransformation(Operation):
+    def __init__(
+            self,
+            col_operation_func: None,
+            col_operation_name: str = '',
+            inverse_operation_func: None = None,
+            desired_cols: None = None,
+            logging: bool = True,
+            op_history: OperationHistory = None):
+
+        super().__init__(col_operation_func=col_operation_func,
+                         inverse_operation_func=inverse_operation_func,
+                         col_operation_name=col_operation_name,
+                         desired_cols=desired_cols,
+                         logging=logging,
+                         op_history=op_history)
+
+        self.col_operation_name = col_operation_name
+        # self.col_operation_func = col_operation_func
+
+    def __call__(
+            self,
+            data: pd.DataFrame,
+            desired_cols: list):
+        curr_data = data.copy(deep=True)
+
+        for name in desired_cols:
+            self.col_operation_func(curr_data, name)
+
+        self._record(curr_data)
+
+        return self.ret[-1]

@@ -23,9 +23,9 @@ class PreprocessData:
         self.op_list = op_list
 
     def __call__(
-        self,
-        csv_path: str,
-        # { target signals } --> { auxiliary signals }
+            self,
+            csv_path: str,
+            # { target signals } --> { auxiliary signals }
             desired_feats: dict):
 
         ret = []
@@ -53,11 +53,6 @@ class PreprocessData:
         hours = []
         if self.generate_time_dummies:
             dummy_var_data = ret[-1].copy(deep=True)
-
-            days = ['DUMMY_Monday', 'DUMMY_Tuesday', 'DUMMY_Wednesday',
-                    'DUMMY_Thursday', 'DUMMY_Friday', 'DUMMY_Saturday',
-                    'DUMMY_Sunday']
-            hours = [f'DUMMY_hr_{i}' for i in range(24)]
 
             # daily dummy vars
             for i, x in enumerate(days):
@@ -87,17 +82,18 @@ class PreprocessData:
                 op_name_history.append(
                     f'truncated_{self.quantile_cutoff}_quantile')
 
-        desired_cols = list(
-            set(ret[-1].columns.values.tolist()) - set(days) - set(hours))
+        # desired_cols = list(
+        #     set(ret[-1].columns.values.tolist()) - set(days) - set(hours))
 
-        self.op_list(ret[-1], desired_cols)
-        ret.extend([op.ret[-1] for op in self.op_list.seq])
-        op_name_history.extend([op.op_history[-1] for op in self.op_list.seq])
+        self.op_list.fit(ret[-1])
+        self.op_list(ret[-1])
+        # ret.extend([op.ret[-1] for op in self.op_list.seq])
+        # op_name_history.extend([op.op_history[-1] for op in self.op_list.seq])
 
-        ret_dict = self.op_list.history(op_name_history, ret)
+        # ret_dict = self.op_list.history(op_name_history, ret)
 
         # return DF_0, ..., DF_5
-        return ret_dict
+        # return ret_dict
 
     def extract_feats_to_tensor(
             self,

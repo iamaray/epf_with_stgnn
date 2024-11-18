@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
-from .processing_classes import *
+from .processing_classes import DataTransformation, OperationHistory
 
 # def calc_col_mad(df: pd.DataFrame, col_name: str):
 #     col = df[col_name]
@@ -97,17 +97,29 @@ from .processing_classes import *
 #     return log_val
 
 #     # return unstandardized
+
+days = ['DUMMY_Monday', 'DUMMY_Tuesday', 'DUMMY_Wednesday',
+        'DUMMY_Thursday', 'DUMMY_Friday', 'DUMMY_Saturday',
+        'DUMMY_Sunday']
+hours = [f'DUMMY_hr_{i}' for i in range(24)]
+
+
 class MADStandardScaler(DataTransformation):
-    def __init__(self, desired_cols=None, logging=False):
+    def __init__(self, desired_cols=None, logging=False, op_history=None):
         super().__init__(col_operation_name='MADStandardScaler',
-                         desired_cols=desired_cols, logging=logging)
+                         desired_cols=desired_cols,
+                         logging=logging,
+                         op_history=op_history,
+                         col_operation_func=self.transform,
+                         inverse_operation_func=self.inverse_transform)
         self.median_ = None
         self.mad_ = None
 
     def fit(self, X, y=None):
         X = pd.DataFrame(X)
         if self.desired_cols is None:
-            self.desired_cols = X.columns.tolist()
+            self.desired_cols = list(
+                (set(X.columns.tolist()) - set(days)) - set(hours))
         self.median_ = X[self.desired_cols].median()
         self.mad_ = (X[self.desired_cols] - self.median_).abs().median()
         return self
@@ -127,17 +139,19 @@ class MADStandardScaler(DataTransformation):
 
 
 class ArcsinhTransformer(DataTransformation):
-    def __init__(self, desired_cols=None, logging=False):
+    def __init__(self, desired_cols=None, logging=False, op_history=None):
         super().__init__(
             col_operation_func=np.arcsinh,
             inverse_operation_func=np.sinh,
             col_operation_name='ArcsinhTransformer',
             desired_cols=desired_cols,
-            logging=logging
+            logging=logging,
+            op_history=op_history
         )
 
     def fit(self, X, y=None):
         X = pd.DataFrame(X)
         if self.desired_cols is None:
-            self.desired_cols = X.columns.tolist()
+            self.desired_cols = list(
+                (set(X.columns.tolist()) - set(days)) - set(hours))
         return self
