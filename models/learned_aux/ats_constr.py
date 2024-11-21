@@ -125,23 +125,13 @@ class EmbeddingConstr(nn.Module):
 
     def forward(self, x):
         # x shape: [batch_size, num_variates, seq_len]
-
-        # Apply convolutional layer across sequence length dimension
         x_conv = self.conv1(x)
-
-        # Apply batch normalization
         x_bn = self.bn1(x_conv)
-
-        # Apply activation function
         x_act = self.relu(x_bn)
 
-        # Reshape to apply FC independently to each variate
         batch_size, num_variates, seq_len = x.size()
-        # Reshape to [batch_size * num_variates, conv_channels * seq_len]
         x_reshaped = x_act.view(self.conv_chans * seq_len, -1).transpose(0, 1)
-        # Generate embeddings through the fully connected layer
         embeddings_reshaped = self.fc(x_reshaped)
-        # Reshape back to include variate dimension
         embeddings = embeddings_reshaped.view(batch_size, num_variates, -1)
 
         # Transpose to get the desired shape [batch_size, embedding_dim, num_variates]

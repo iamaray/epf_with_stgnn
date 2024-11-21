@@ -29,17 +29,25 @@ class DatasetConstructor:
 
     def __init__(
             self,
-            dynamic_adj: bool = True,
+            # the type of curriculum imposed over the datset
             curriculum_type: str = 'pred_len',
-            curriculum: np.array = np.array([3, 6, 12, 18, 24]),
-            batch_sizes: np.array = np.array([64 for i in range(5)]),
-            device=device):
+            # an array denoting the difficulty levels of the curriculum
+            curriculum: np.array = np.array([6, 12, 18, 24]),
+            # possibly varying batch sizes
+            batch_size: int = 32,
+            copula_adj: bool = False,
+            window_hours: int = 168,
+            step_hours: int = 24,
+            split_hour: int = 3953):
 
-        self.dynamic_adj = dynamic_adj
-        # self.adj = adj
+        self.copula_adj = copula_adj
         self.curriculum_type = curriculum_type
         self.curriculum = curriculum
-        self.batch_sizes = batch_sizes
+        self.batch_size = batch_size
+        self.window_hours = window_hours
+        self.step_hours = step_hours
+        self.split_hour = split_hour
+
         self.datasets = []
 
     def __call__(self, data_tensor: torch.Tensor):
@@ -48,36 +56,49 @@ class DatasetConstructor:
         else:
             # _, in_chans, nodes, seq_len = data_tensor.shape
 
-            for k, level in enumerate(self.curriculum):
-                x_train, y_train, tr_adj, x_test, y_test, te_adj = form_training_pairs(
-                    data_tensor, pred_contraction=level)
+            for i, level in enumerate(self.curriculum):
+                x_train, y_train, tr_adj_lst, x_test, y_test, te_adj_lst = form_training_pairs(
+                    data_tensor=data_tensor,
+                    pred_contraction=level,
+                    copula_adj=self.copula_adj,
+                    window_hours=self.window_hours,
+                    step_hours=self.step_hours)
 
-                train_list = []
-                test_list = []
+            tr_pair_lst = zip(x_train, y_train, [
+                              None for _ in range(len(x_train))])
+            te_pair_lst = zip(
+                x_test, y_test, [None for _ in range(len(x_test))])
 
-                if len(tr_adj) == 0:
-                    tr_adj = [None] * len(x_train)
-                    te_adj = [None] * len(x_test)
+            if tr_adj_lst != None:
+                tr_pair_lst = zip(x_train, y_train, tr_adj_lst)
+                te_pair_lst = zip(x_test, y_test, te_adj_lst)
 
-                for i, (x_i, y_i) in enumerate(zip(x_train, y_train)):
-                    train_data_i = Data(
-                        x=x_i.unsqueeze(0), edge_attr=torch.Tensor(tr_adj[i]).unsqueeze(0), y=torch.transpose(y_i.unsqueeze(0), 1, 2))
-                    train_list.append(train_data_i)
+            train_list = []
+            test_list = []
 
-                for j, (x_ti, y_ti) in enumerate(zip(x_test, y_test)):
-                    test_data_i = Data(
-                        x=x_ti.unsqueeze(0), edge_attr=torch.Tensor(te_adj[j]).unsqueeze(0), y=torch.transpose(y_ti.unsqueeze(0), 1, 2))
-                    test_list.append(test_data_i)
+            for x_i, y_i, tr_adj_i in tr_pair_lst:
+                train_data_i = Data(
+                    x=x_i.unsqueeze(0), edge_attr=tr_adj_i, y=torch.transpose(y_i.unsqueeze(0), 1, 2))
+                train_list.append(train_data_i)
 
-                train_dataset = MyDataset(train_list)
-                test_dataset = MyDataset(test_list)
+            for x_ti, y_ti, te_adj_i in te_pair_lst:
+                test_data_i = Data(
+                    x=x_ti.unsqueeze(0), edge_attr=te_adj_i, y=torch.transpose(y_ti.unsqueeze(0), 1, 2))
+                test_list.append(test_data_i)
 
-                gen = torch.Generator(device)
-                train_loader = DataLoader(
-                    train_dataset, batch_size=int(self.batch_sizes[k]), shuffle=True, generator=gen)
-                test_loader = DataLoader(
-                    test_dataset, batch_size=int(self.batch_sizes[k]), shuffle=False, generator=gen)
+            train_dataset = MyDataset(train_list)
+            test_dataset = MyDataset(test_list)
 
-                self.datasets.append((train_loader, test_loader))
+            gen = torch.Generator('cpu')
+
+            if torch.cuda.is_available():
+                gen = torch.Generator('cuda')
+
+            train_loader = DataLoader(
+                train_dataset, batch_size=self.batch_size, shuffle=True, generator=gen)
+            test_loader = DataLoader(
+                test_dataset, batch_size=int(self.batch_size), shuffle=False, generator=gen)
+
+            self.datasets.append((train_loader, test_loader))
 
             return self.datasets

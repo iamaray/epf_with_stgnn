@@ -104,54 +104,87 @@ days = ['DUMMY_Monday', 'DUMMY_Tuesday', 'DUMMY_Wednesday',
 hours = [f'DUMMY_hr_{i}' for i in range(24)]
 
 
-class MADStandardScaler(DataTransformation):
-    def __init__(self, desired_cols=None, logging=False, op_history=None):
-        super().__init__(col_operation_name='MADStandardScaler',
-                         desired_cols=desired_cols,
-                         logging=logging,
-                         op_history=op_history,
-                         col_operation_func=self.transform,
-                         inverse_operation_func=self.inverse_transform)
-        self.median_ = None
-        self.mad_ = None
+class MADStandardizer(BaseEstimator, TransformerMixin):
+    """
+    A scikit-learn transformer for mean absolute deviation (MAD) standardization.
+    """
+
+    def __init__(self):
+        self.feature_means_ = None
+        self.feature_mads_ = None
 
     def fit(self, X, y=None):
-        X = pd.DataFrame(X)
-        if self.desired_cols is None:
-            self.desired_cols = list(
-                (set(X.columns.tolist()) - set(days)) - set(hours))
-        self.median_ = X[self.desired_cols].median()
-        self.mad_ = (X[self.desired_cols] - self.median_).abs().median()
+        """
+        Fit the transformer to the data by computing the mean and MAD for each feature.
+        """
+        if not isinstance(X, pd.DataFrame):
+            raise ValueError("Input must be a Pandas DataFrame.")
+
+        # Calculate the mean for each feature
+        self.feature_means_ = X.mean()
+
+        # Calculate MAD (mean absolute deviation) for each feature
+        self.feature_mads_ = X.sub(self.feature_means_, axis=1).abs().mean()
+
+        # Prevent division by zero
+        self.feature_mads_.replace(0, np.nan, inplace=True)
         return self
 
     def transform(self, X):
-        X_transformed = pd.DataFrame(X).copy()
-        X_transformed[self.desired_cols] = (
-            X_transformed[self.desired_cols] - self.median_) / self.mad_
-        self._record(X_transformed)
-        return X_transformed
+        """
+        Standardize the data using MAD.
+        """
+        if self.feature_means_ is None or self.feature_mads_ is None:
+            raise ValueError(
+                "The transformer must be fitted before calling transform.")
 
-    def inverse_transform(self, X):
-        X_inverse_transformed = pd.DataFrame(X).copy()
-        X_inverse_transformed[self.desired_cols] = X_inverse_transformed[self.desired_cols] * \
-            self.mad_ + self.median_
-        return X_inverse_transformed
+        return (X - self.feature_means_) / self.feature_mads_
+
+    def inverse_transform(self, X_transformed):
+        """
+        Revert the standardization to the original data scale.
+        """
+        if self.feature_means_ is None or self.feature_mads_ is None:
+            raise ValueError(
+                "The transformer must be fitted before calling inverse_transform.")
+
+        return (X_transformed * self.feature_mads_) + self.feature_means_
 
 
-class ArcsinhTransformer(DataTransformation):
-    def __init__(self, desired_cols=None, logging=False, op_history=None):
-        super().__init__(
-            col_operation_func=np.arcsinh,
-            inverse_operation_func=np.sinh,
-            col_operation_name='ArcsinhTransformer',
-            desired_cols=desired_cols,
-            logging=logging,
-            op_history=op_history
-        )
+class ArcsinhTransformer(BaseEstimator, TransformerMixin):
+    """
+    A scikit-learn transformer for applying the arcsinh transformation.
+    """
+
+    def __init__(self):
+        pass
 
     def fit(self, X, y=None):
-        X = pd.DataFrame(X)
-        if self.desired_cols is None:
-            self.desired_cols = list(
-                (set(X.columns.tolist()) - set(days)) - set(hours))
+        """
+        The fit method doesn't need to compute anything for the arcsinh transformation.
+        """
+        # Ensure input is a Pandas DataFrame
+        if not isinstance(X, pd.DataFrame):
+            raise ValueError("Input must be a Pandas DataFrame.")
         return self
+
+    def transform(self, X):
+        """
+        Apply the arcsinh transformation to the data.
+        """
+        # Check if fit has been called
+        if not hasattr(self, 'fit'):
+            raise AttributeError(
+                "This ArcsinhTransformer instance is not fitted yet.")
+
+        # Apply arcsinh transformation
+        X_transformed = X.applymap(np.arcsinh)
+        return X_transformed
+
+    def inverse_transform(self, X_transformed):
+        """
+        Apply the inverse (sinh) transformation to revert data back to original scale.
+        """
+        # Apply inverse sinh transformation
+        X_original = X_transformed.applymap(np.sinh)
+        return X_original

@@ -1,3 +1,4 @@
 # ignore proprietary data
 data/refilled.csv
 miss_load_wind_solar.py
+*.csv

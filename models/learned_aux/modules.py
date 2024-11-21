@@ -1,3 +1,6 @@
+from pyinform import transfer_entropy
+
+
 class FeatureExtractor(nn.Module):
     def __init__(
         self,
@@ -235,3 +238,75 @@ class ATSConstructor(nn.Module):
         sparse_ats = self.apply_atten(atten_weights, ats)
 
         return sparse_ats
+
+
+class ContinuityLoss(nn.Module):
+    def __init__(self, beta):
+        super(ContinuityLoss, self).__init__()
+        self.beta = beta
+        self.prod = batch_const_mul()
+
+    def forward(self, x):
+        num_ats = x.shape[1]
+        seq_len = x.shape[2]
+        scale = self.beta / (num_ats * seq_len)
+
+        variates = torch.split(x, split_size_or_sections=1, dim=1)
+        stds = []
+
+        for v in variates:
+            stds.append(torch.std(v, dim=-1))
+
+        stds = torch.cat(stds, dim=-1)
+        stds = 1 / stds
+        offset = x[:, :, 1:] - x[:, :, :seq_len-1]
+        # compute the sum
+        batch_loss = scale * torch.sum(  # sum along sequence length
+            torch.sum(                    # sum along channel dimension
+                torch.pow(                # square the inside
+                    self.prod(stds, offset), 2), dim=1), dim=-1)
+
+        return torch.mean(batch_loss)
+
+
+class GraphContinuityLoss(nn.Module):
+    def __init__(self, beta):
+        super(GraphContinuityLoss, self).__init__()
+        self.variate_loss = ContinuityLoss(beta)
+
+    def forward(self, x):
+        agg_loss = 0.0
+        vars = [v.squeeze(2) for v in torch.split(
+            x, split_size_or_sections=1, dim=2)]
+
+        for v in vars:
+            agg_loss += self.variate_loss(v)
+
+        return (1 / x.shape[2]) * agg_loss
+
+
+class TransferEntropyLoss(nn.Module):
+    def __init__(self, beta, history_len):
+        super(TransferEntropyLoss, self).__init__()
+        self.history_len = history_len
+        self.beta = beta
+
+    def forward(self, x):
+        scale = self.beta * (1 / (x.shape[1] * x.shape[2] * x.shape[3]))
+        aggs = []
+        variates = [v[:, :, 0, :]
+                    for v in torch.split(x, split_size_or_sections=1, dim=2)]
+        # print(variates[0].shape)
+        for i, v in enumerate(variates):
+            curr_agg = 0
+
+            for j in range(1, v.shape[1]):
+                v_curr = v[:, 0, :].cpu().detach().numpy()
+                xs = v[:, j, :].cpu().detach().numpy()
+                # ws = torch.cat(torch.split(torch.cat([v[:, 1:j, :], v[:, j+1:, :]], dim=1), split_size_or_sections=1, dim=1), dim=1).transpose(0,1).detach().numpy()
+                # print(ws.shape)
+                curr_agg += transfer_entropy(xs, v_curr, k=self.history_len)
+
+            aggs.append(curr_agg)
+
+        return scale * np.mean(aggs)

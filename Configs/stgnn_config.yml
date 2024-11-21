@@ -1,0 +1,64 @@
+raw_data_path: "data/combined_dataset.csv"
+
+preprocessing:
+  dummy_vars:
+    - day_dummies: true
+    - hour_dummies: true
+
+  transform_funcs:
+    - name: mad_std # MAD standardization
+    - name: arcsinh_norm # inverse sinh normalization
+
+dataset_params:
+  curriculum_type: pred_len
+  curriculum: [6, 12, 18, 24]
+  batch_size: 32
+  window_hours: 168
+  step_hours: 24
+  split_hour: 3953
+  copula_adj: false
+
+model_params:
+  ots_model_params:
+    - K: 5
+    - beta: 0.05
+    - residual_chans: 32
+    - conv_chans: 64
+    - gc_support_len: 3
+    - gc_order: 3
+    - gc_dropout: 0.1
+    - skip_chans: 64
+    - end_chans: 128
+    - num_layers: 5
+    - dilation_multiplier: 1
+    - dropout_factor: 0.3
+    - use_graph_conv: true
+    - use_temp_conv: true
+    - use_diffusion: false
+    - adj_type: learned
+
+  use_learned_ats: true
+  learned_ats_params:
+    - conv_out: 29
+    - conv_kern: 1
+    - non_overlap_conv_out: 29
+    - non_overlap_conv_kern: 3
+    - independ_conv_out_mult: 1
+    - independ_conv_kern: 5
+    - lin_proj_out: 29
+    - embed_out: 29
+    - embed_conv_chans: 10
+    - embed_kern_size: 7
+
+  use_forward_ats: false
+  forward_ats_params:
+    - conv_out: 29
+    - conv_kern: 1
+    - non_overlap_conv_out: 29
+    - non_overlap_conv_kern: 3
+    - independ_conv_out_mult: 1
+    - independ_conv_kern: 5
+    - lin_proj_out: 29
+    - embed_out: 29
+    - embed_conv_chans: 10
+    - embed_kern_size: 7
