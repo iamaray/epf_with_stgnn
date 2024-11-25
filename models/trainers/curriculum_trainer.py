@@ -1,54 +1,45 @@
 import torch
 import torch.optim as optim
 import numpy as np
-from .evaluation import *
+import scipy as sc
+
+from .evaluation import masked_mae, masked_avg_loc_diff, calc_err, GraphContinuityLoss, TransferEntropyLoss
 
 
 class PredLenCurriculumTrainer:
-    """
-    Trainer class for training and evaluating multiple PyTorch models with prediction length curriculum.
+    def __init__(
+            self,
+            models,
+            epochs=60,
+            lr=1e-3,
+            weight_decay=1e-4,
+            grad_clip=5,
+            noise_mult=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            pred_criterion=masked_mae,
+            beta_ats=0.25,
+            te_history=10,
+            criterion_quantile=0.0):
 
-    Parameters:
-        models (list of torch.nn.Module): List of models to be trained.
-        epochs (int): Number of training epochs. Default is 60.
-        lr (float): Learning rate for the optimizer. Default is 1e-3.
-        weight_decay (float): Weight decay (L2 penalty) for the optimizer. Default is 1e-4.
-        grad_clip (float): Gradient clipping value. Default is 5.
-        noise_mult (list of float): Multipliers for adding noise to the data. Default is [0.05, 0.10, 0.15, 0.20, 0.0].
-        criterion (function): Loss function to use. Default is masked_mae.
-
-    Attributes:
-        models (list of torch.nn.Module): List of models to be trained.
-        optimizers (list of torch.optim.Optimizer): List of optimizers for each model.
-        epochs (int): Number of training epochs.
-        criterion (function): Loss function to use.
-        losses (numpy.ndarray): Array to store training losses.
-        grad_clip (float): Gradient clipping value.
-        trained_model (torch.nn.Module): The most recently trained model.
-        noise_mult (list of float): Multipliers for adding noise to the data.
-    """
-
-    def __init__(self, models, epochs=60, lr=1e-3, weight_decay=1e-4, grad_clip=5, noise_mult=[0.05, 0.10, 0.15, 0.20, 0.0], criterion=masked_mae):
         self.models = models
+        self.criterion_quantile = criterion_quantile
+        self.beta_ats = beta_ats
         self.optimizers = [optim.Adam(
             m.parameters(), lr=lr, weight_decay=weight_decay) for m in models]
+        # self.optimizer = optim.Adam(
+        #     self.model.parameters(), lr=lr, weight_decay=weight_decay)
         self.epochs = epochs
-        self.criterion = criterion
-        self.losses = np.array([])
+        self.pred_criterion = pred_criterion
+        self.ats_criterion = GraphContinuityLoss(beta_ats)
+        # TODO: implement TE loss
+        self.forward_ats_criterion = TransferEntropyLoss(beta_ats, te_history)
+        self.diff_loss = masked_avg_loc_diff
+
+        # self.losses = np.array([])
         self.grad_clip = grad_clip
         self.trained_model = None
         self.noise_mult = noise_mult
 
-    def train(self, curriculum_loader):
-        """
-        Trains the models using the provided curriculum data loaders.
-
-        Parameters:
-            curriculum_loader (list of tuples): List of tuples containing training and testing data loaders.
-
-        Returns:
-            None
-        """
+    def train(self, curriculum_loader, use_ats):
         for i, (train_loader, test_loader) in enumerate(curriculum_loader):
             model = self.models[i]
             optimizer = self.optimizers[i]
@@ -56,31 +47,76 @@ class PredLenCurriculumTrainer:
 
             prev_state = None
             curr_state = model.state_dict()
+            # load the weights from previous model that match shape
+            # For pred length curriculum, this will be all the weights
+            # except that of output_conv_2.
             if i > 0:
                 prev_state = self.models[i - 1].state_dict()
+
+                # filtered_state = {}
+                # for k, v in prev_state.items():
+                #   if curr_state[k].shape == prev_state[k].shape:
+                #     filtered_state[k] = v
+                #   else:
+
                 filtered_state = {k: v for k, v in prev_state.items(
                 ) if curr_state[k].shape == prev_state[k].shape}
+                # print("here:", len(prev_state.keys()) - len(filtered_state.keys()))
                 curr_state.update(filtered_state)
                 model.load_state_dict(curr_state)
 
             print(
-                f"\n====================== TRAINING ON DATASET {i} ======================")
+                f"\n======================TRAINING ON DATASET {i}======================")
             for epoch in range(self.epochs):
-                running_loss = 0.0
+                running_pred_loss = torch.Tensor([0.0]).to('cuda')
+                running_ats_loss = torch.Tensor([0.0]).to('cuda')
+                running_forward_loss = torch.Tensor([0.0]).to('cuda')
+
                 for data in train_loader:
-                    noise = torch.Tensor(np.random.multivariate_normal(
-                        mean=np.zeros((data.x.shape[-1])),
-                        cov=np.eye(data.x.shape[-1]),
-                        size=data.x.shape[:-1])).to('cuda')
+                    noise = torch.Tensor(
+                        np.random.multivariate_normal(
+                            mean=np.zeros((data.x.shape[-1])),
+                            cov=np.eye(data.x.shape[-1]),
+                            size=data.x.shape[:-1])).to('cuda')
 
                     data = data.to('cuda')
                     data.x = data.x + (self.noise_mult[i] * noise)
                     optimizer.zero_grad()
-                    outputs = model(data)
-                    if model.use_graph_conv and not model.use_temp_conv:
-                        outputs = outputs.permute(0, 2, 1)
 
-                    loss = self.criterion(outputs, data.y, 0.0)
+                    ats_loss = torch.Tensor([0.0]).to('cuda')
+                    forward_loss = torch.Tensor([0.0]).to('cuda')
+
+                    outputs = None
+                    ats = None
+                    forward_ats = None
+                    if use_ats:
+                        # print(data.x.shape)
+                        if model.f_ats:
+                            outputs, ats, forward_ats = model(data)
+                            ats_loss = self.ats_criterion(ats)
+                            # forward_loss = self.ats_criterion(forward_ats) - self.forward_ats_criterion(torch.abs(forward_ats))
+                        else:
+                            outputs, ats, _ = model(data)
+                            ats_loss = self.ats_criterion(ats)
+                            # print(ats_loss)
+                        # print('here:', forward_ats.cpu().detach().numpy() < 0)
+                    else:
+                        outputs, _, _ = model(data)
+
+                    # if model.use_graph_conv and not model.use_temp_conv:
+                    #     outputs = outputs.permute(0, 2, 1)
+
+                    # print(outputs.shape, data.y.shape)
+                    pred_loss = self.pred_criterion(
+                        outputs, data.y, quantile=self.criterion_quantile)
+
+                    loss_locational = self.diff_loss(
+                        outputs, data.y, beta=self.beta_ats)
+
+                    loss = pred_loss + ats_loss + forward_loss + loss_locational
+
+                    # loss = self.criterion(outputs, data.y)
+                    # print('here')
                     loss.backward()
 
                     if self.grad_clip is not None:
@@ -88,30 +124,58 @@ class PredLenCurriculumTrainer:
                             model.parameters(), self.grad_clip)
 
                     optimizer.step()
-                    running_loss += loss.item()
 
-                avg_loss = running_loss / len(train_loader)
-                self.losses = np.append(self.losses, avg_loss)
+                    running_pred_loss += pred_loss.item()
+                    running_ats_loss += ats_loss.item()
+                    running_forward_loss += forward_loss.item()
+
+                avg_pred_loss = running_pred_loss / len(train_loader)
+                avg_ats_loss = running_ats_loss / len(train_loader)
+                avg_forward_loss = running_forward_loss / len(train_loader)
+
+                # print(f'Epoch {epoch+1}, Loss: {avg_loss}')
 
                 if (epoch + 1) % 10 == 0:
                     print(
-                        f'Epoch {epoch + 1} of Dataset {i}, Loss: {avg_loss}')
+                        f'Epoch {epoch+1} of Dataset {i}, Loss: {avg_pred_loss.item(), avg_ats_loss.item(), avg_forward_loss.item()}')
 
             self.trained_model = self.models[i]
-            self.test(test_loader)
+            self.test(test_loader, use_ats=use_ats)
 
-        self._final_metrics(train_loader)
+        # Calculate final MSE, MAE, and MAPE
+        predictions = []
+        targets = []
+        for data in train_loader:
+            data = data.to('cuda')
+            data = data
+            outputs, _, _ = self.trained_model(data)
 
-    def test(self, test_loader):
-        """
-        Evaluates the most recently trained model using the provided test data loader.
+            # if self.trained_model.use_graph_conv and not self.trained_model.use_temp_conv:
+            #     outputs = outputs.permute(0, 2, 1)
 
-        Parameters:
-            test_loader (torch.utils.data.DataLoader): DataLoader for the test data.
+            outputs = torch.split(outputs.cpu().detach(), 1, 0)
+            outputs = np.array([o.squeeze(0).numpy() for o in outputs])
+            outputs = np.concatenate(outputs)
+            predictions.extend(outputs)
 
-        Returns:
-            tuple: MSE, MAE, and MAPE values for the test set.
-        """
+            ground_truth = torch.split(data.y.cpu().detach(), 1, 0)
+            ground_truth = np.array([t.squeeze(0).numpy()
+                                    for t in ground_truth])
+            ground_truth = np.concatenate(ground_truth)
+            targets.extend(ground_truth)
+
+        targets = torch.Tensor(targets)
+        predictions = torch.Tensor(predictions)
+
+        # mse = calc_err(targets, predictions, 'mse')
+        mae = calc_err(targets, predictions, 'mae')
+        # mape_val = calc_err(targets, predictions, 'mape')
+
+        print(
+            f"Final Training Metrics, by Location (Houston, North, Panhandle):" +
+            f"\nMSE: NA\nMAE: {mae}\nMAPE: NA")
+
+    def test(self, test_loader, use_ats):
         self.trained_model.eval()
         test_loss = 0.0
         predictions = []
@@ -120,78 +184,38 @@ class PredLenCurriculumTrainer:
         with torch.no_grad():
             for data in test_loader:
                 data = data.to('cuda')
-                outputs = self.trained_model(data)
-                if self.trained_model.use_graph_conv and not self.trained_model.use_temp_conv:
-                    outputs = outputs.permute(0, 2, 1)
+                outputs, _, _ = self.trained_model(data)
 
-                loss = self.criterion(outputs, data.y)
+                # if self.trained_model.use_graph_conv and not self.trained_model.use_temp_conv:
+                #     outputs = outputs.permute(0, 2, 1)
+
+                loss = self.pred_criterion(outputs, data.y)
+
                 test_loss += loss.item()
 
-                predictions.extend(self._process_outputs(outputs))
-                targets.extend(self._process_outputs(data.y))
+                outputs = torch.split(outputs.cpu().detach(), 1, 0)
+                outputs = np.array([o.squeeze(0).numpy() for o in outputs])
+                outputs = np.concatenate(outputs)
+                predictions.extend(outputs)
+
+                ground_truth = torch.split(data.y.cpu().detach(), 1, 0)
+                ground_truth = np.array([t.squeeze(0).numpy()
+                                        for t in ground_truth])
+                ground_truth = np.concatenate(ground_truth)
+                targets.extend(ground_truth)
 
         test_loss /= len(test_loader)
         print(f'Test Loss: {test_loss}')
 
-        mse, mae, mape_val = self._calculate_errors(targets, predictions)
-        print(
-            f"Final Testing Metrics, by Location (Houston, North, Panhandle):\nMSE: {mse}\nMAE: {mae}\nMAPE: {mape_val}%")
-
-        return mse, mae, mape_val
-
-    def _final_metrics(self, loader):
-        """
-        Calculates final MSE, MAE, and MAPE metrics after training.
-
-        Parameters:
-            loader (torch.utils.data.DataLoader): DataLoader for the data.
-
-        Returns:
-            None
-        """
-        predictions = []
-        targets = []
-        for data in loader:
-            data = data.to('cuda')
-            outputs = self.trained_model(data)
-            if self.trained_model.use_graph_conv and not self.trained_model.use_temp_conv:
-                outputs = outputs.permute(0, 2, 1)
-            predictions.extend(self._process_outputs(outputs))
-            targets.extend(self._process_outputs(data.y))
-
-        mse, mae, mape_val = self._calculate_errors(targets, predictions)
-        print(
-            f"Final Training Metrics, by Location (Houston, North, Panhandle):\nMSE: {mse}\nMAE: {mae}\nMAPE: {mape_val}%")
-
-    def _process_outputs(self, outputs):
-        """
-        Processes model outputs for metric calculation.
-
-        Parameters:
-            outputs (torch.Tensor): Model outputs.
-
-        Returns:
-            list: Processed outputs.
-        """
-        outputs = torch.split(outputs.cpu().detach(), 1, 0)
-        outputs = np.array([o.squeeze(0).numpy() for o in outputs])
-        outputs = np.concatenate(outputs)
-        return outputs
-
-    def _calculate_errors(self, targets, predictions):
-        """
-        Calculates MSE, MAE, and MAPE metrics.
-
-        Parameters:
-            targets (list): Ground truth targets.
-            predictions (list): Model predictions.
-
-        Returns:
-            tuple: MSE, MAE, and MAPE values.
-        """
-        targets = torch.Tensor(targets)
         predictions = torch.Tensor(predictions)
-        mse = calc_err(targets, predictions, 'mse')
+        targets = torch.Tensor(targets)
+
+        # mse = calc_err(targets, predictions, 'mse')
         mae = calc_err(targets, predictions, 'mae')
-        mape_val = calc_err(targets, predictions, 'mape')
-        return mse, mae, mape_val
+        # mape_val = calc_err(targets, predictions, 'mape')
+
+        print(
+            f"Final Testing Metrics, by Location (Houston, North, Panhandle):" +
+            f"\nMSE: NA\nMAE: {mae}\nMAPE: NA")
+
+        return 0.0, mae, 0.0

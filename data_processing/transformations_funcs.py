@@ -120,14 +120,10 @@ class MADStandardizer(BaseEstimator, TransformerMixin):
         if not isinstance(X, pd.DataFrame):
             raise ValueError("Input must be a Pandas DataFrame.")
 
-        # Calculate the mean for each feature
         self.feature_means_ = X.mean()
-
-        # Calculate MAD (mean absolute deviation) for each feature
         self.feature_mads_ = X.sub(self.feature_means_, axis=1).abs().mean()
-
-        # Prevent division by zero
         self.feature_mads_.replace(0, np.nan, inplace=True)
+
         return self
 
     def transform(self, X):
@@ -138,7 +134,8 @@ class MADStandardizer(BaseEstimator, TransformerMixin):
             raise ValueError(
                 "The transformer must be fitted before calling transform.")
 
-        return (X - self.feature_means_) / self.feature_mads_
+        standardized = (X - self.feature_means_) / self.feature_mads_
+        return standardized.to_numpy()
 
     def inverse_transform(self, X_transformed):
         """
@@ -164,27 +161,24 @@ class ArcsinhTransformer(BaseEstimator, TransformerMixin):
         The fit method doesn't need to compute anything for the arcsinh transformation.
         """
         # Ensure input is a Pandas DataFrame
-        if not isinstance(X, pd.DataFrame):
-            raise ValueError("Input must be a Pandas DataFrame.")
+        # if not isinstance(X, pd.DataFrame):
+        #     raise ValueError("Input must be a Pandas DataFrame.")
         return self
 
     def transform(self, X):
         """
         Apply the arcsinh transformation to the data.
         """
-        # Check if fit has been called
-        if not hasattr(self, 'fit'):
-            raise AttributeError(
-                "This ArcsinhTransformer instance is not fitted yet.")
+        # if not hasattr(self, 'fit'):
+        #     raise AttributeError(
+        #         "This ArcsinhTransformer instance is not fitted yet.")
 
-        # Apply arcsinh transformation
-        X_transformed = X.applymap(np.arcsinh)
+        X_transformed = np.arcsinh(X)
         return X_transformed
 
     def inverse_transform(self, X_transformed):
         """
         Apply the inverse (sinh) transformation to revert data back to original scale.
         """
-        # Apply inverse sinh transformation
         X_original = X_transformed.applymap(np.sinh)
         return X_original
