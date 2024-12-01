@@ -7,14 +7,14 @@ import torch
 from data_processing.processing_classes import *
 from data_processing.transformations_funcs import *
 
-log_transform = DataTransformation(
-    col_operation_func=log_transform_col, col_operation_name='log_transform')
+# log_transform = DataTransformation(
+#     col_operation_func=log_transform_col, col_operation_name='log_transform')
 
-mad_standardization = DataTransformation(
-    col_operation_func=standardize_col, col_operation_name='MAD_Standardization')
+# mad_standardization = DataTransformation(
+#     col_operation_func=standardize_col, col_operation_name='MAD_Standardization')
 
-arcsinh_normalization = DataTransformation(
-    col_operation_func=arcsinh_col, col_operation_name='arcsinh_normalization')
+# arcsinh_normalization = DataTransformation(
+#     col_operation_func=arcsinh_col, col_operation_name='arcsinh_normalization')
 
 
 def compute_a_tilde(adj):

@@ -1,3 +1,12 @@
+import torch
+import torch.nn as nn
+import numpy as np
+
+from ..learned_aux.modules import *
+from ..learned_aux.ats_constr import *
+from .model import STGNN
+
+
 class STGNN_ATS(nn.Module):
     def __init__(
             self,
@@ -107,9 +116,9 @@ def construct_ats_stgnn(
         embed_out=ats_constr_params['embed_out'],
         embed_conv_chans=ats_constr_params['embed_conv_chans'],
         embed_kern_size=ats_constr_params['embed_kern_size'],
-        feat_extractor_activation=ats_constr_params['feat_extractor_activation'],
-        agg_activation=ats_constr_params['agg_activation'],
-        atten_activation=ats_constr_params['atten_activation']
+        feat_extractor_activation=nn.GELU(),
+        agg_activation=nn.GELU(),
+        atten_activation=nn.GELU()
     )
 
     fwd_constr = ATSConstructor(
@@ -125,9 +134,9 @@ def construct_ats_stgnn(
         embed_out=fwd_ats_constr_params['embed_out'],
         embed_conv_chans=fwd_ats_constr_params['embed_conv_chans'],
         embed_kern_size=fwd_ats_constr_params['embed_kern_size'],
-        feat_extractor_activation=fwd_ats_constr_params['feat_extractor_activation'],
-        agg_activation=fwd_ats_constr_params['agg_activation'],
-        atten_activation=fwd_ats_constr_params['atten_activation']
+        feat_extractor_activation=nn.GELU(),
+        agg_activation=nn.GELU(),
+        atten_activation=nn.GELU()
     )
 
     c_in_ots = c_in

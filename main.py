@@ -4,7 +4,7 @@
 # from data_processing.transformations_funcs import MADStandardScaler, ArcsinhTransformer
 # from data_processing.dataset_constructors import DatasetConstructor
 # from data_processing.processor import PreprocessData
-from data_processing.pipelines import STGNNPipeline
+from models.pipelines import STGNNPipeline
 
 
 def main():

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple
-from modules import *
+from .modules import *
 
 import torch.nn as nn
 from typing import Optional, Tuple

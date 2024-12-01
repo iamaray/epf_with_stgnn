@@ -3,7 +3,7 @@ import torch.optim as optim
 import numpy as np
 import scipy as sc
 
-from .evaluation import masked_mae, masked_avg_loc_diff, calc_err, GraphContinuityLoss, TransferEntropyLoss
+from .evaluation import masked_mae, masked_avg_loc_diff, calc_err
 
 
 class PredLenCurriculumTrainer:
@@ -31,7 +31,7 @@ class PredLenCurriculumTrainer:
         self.pred_criterion = pred_criterion
         self.ats_criterion = GraphContinuityLoss(beta_ats)
         # TODO: implement TE loss
-        self.forward_ats_criterion = TransferEntropyLoss(beta_ats, te_history)
+        self.forward_ats_criterion = GraphContinuityLoss(beta=beta_ats)
         self.diff_loss = masked_avg_loc_diff
 
         # self.losses = np.array([])

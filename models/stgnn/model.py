@@ -1,5 +1,5 @@
-from stgnn.layer_constr_helpers import *
-from stgnn.modules import *
+from .layer_constr_helpers import *
+from .modules import *
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from torch.autograd import Variable
 import math
-import modules
+from torch_geometric.data import Data
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

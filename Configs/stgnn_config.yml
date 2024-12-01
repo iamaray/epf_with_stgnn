@@ -14,6 +14,17 @@ dataset_params:
   split_hour: 3953
   copula_adj: false
 
+training_params:
+  epochs: 60
+  lr: 0.001
+  weight_decay: 0.0001
+  grad_clip: 5,
+  noise_mult: [0, 0, 0, 0]
+  pred_criterion: masked_mae
+  beta_ats: 0.25
+  te_history: 10,
+  criterion_quantile: 0
+
 model_params:
   ots_model_params:
     K: 5
