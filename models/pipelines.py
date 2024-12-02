@@ -176,3 +176,7 @@ class STGNNPipeline:
     def evaluate(self):
         # self.trainer.test()
         pass
+
+class FourierGNNPipeline:
+    def __init__(self):
+        pass
