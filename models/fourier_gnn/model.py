@@ -51,7 +51,8 @@ class FGN(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(self.hidden_size, self.pre_length)
         )
-        self.to('cuda:0')
+        if torch.cuda.is_available():
+            self.to('cuda:0')
 
     def tokenEmb(self, x):
         x = x.unsqueeze(2)
@@ -122,8 +123,11 @@ class FGN(nn.Module):
         z = torch.view_as_complex(z)
         return z
 
-    def forward(self, x):
-        x = x.permute(0, 2, 1).contiguous()
+    def forward(self, data):
+        x = data.x
+
+        # x = x.permute(0, 2, 1).contiguous()
+        x = x.contiguous()
         B, N, L = x.shape
         # B*N*L ==> B*NL
         x = x.reshape(B, -1)
@@ -151,8 +155,42 @@ class FGN(nn.Module):
         x = x.permute(0, 1, 3, 2)  # B, N, D, L
 
         # projection
-        x = torch.matmul(x, self.embeddings_10)
+        x = torch.matmul(x.to(self.embeddings_10.dtype), self.embeddings_10)
         x = x.reshape(B, N, -1)
         x = self.fc(x)
 
-        return x
+        return x, None, None
+
+
+def construct_fgn(data, embed_size=32, hidden_size=32, hidden_size_factor=1, sparsity_threshold=0.01, hard_thresholding_fraction=1):
+    """Initialize FGN model based on input data shape and hyperparameters.
+
+    Args:
+        data (torch.Tensor): Input tensor of shape (B, N, L) where:
+            B is batch size
+            N is number of nodes/features
+            L is sequence length
+        embed_size (int): Size of embedding dimension
+        hidden_size (int): Size of hidden layers
+        hidden_size_factor (int): Factor to multiply hidden size
+        sparsity_threshold (float): Threshold for sparsity in Fourier domain
+        hard_thresholding_fraction (float): Fraction for hard thresholding
+
+    Returns:
+        FGN: Initialized FGN model
+    """
+    B, N, L = data.x.shape
+    _, _, P = data.y.shape
+
+    model = FGN(
+        pre_length=P,
+        embed_size=embed_size,
+        feature_size=N,  # Number of features/nodes
+        seq_length=L,  # Input sequence length
+        hidden_size=hidden_size,
+        hidden_size_factor=hidden_size_factor,
+        sparsity_threshold=sparsity_threshold,
+        hard_thresholding_fraction=hard_thresholding_fraction
+    )
+
+    return model

@@ -201,27 +201,22 @@ class ContinuityLoss(nn.Module):
     def __init__(self, beta):
         super(ContinuityLoss, self).__init__()
         self.beta = beta
-        self.prod = batch_const_mul()
 
     def forward(self, x):
-        num_ats = x.shape[1]
+        num_ats = x.shape[1] 
         seq_len = x.shape[2]
         scale = self.beta / (num_ats * seq_len)
 
-        variates = torch.split(x, split_size_or_sections=1, dim=1)
-        stds = []
-
-        for v in variates:
-            stds.append(torch.std(v, dim=-1))
-
-        stds = torch.cat(stds, dim=-1)
+        # Calculate standard deviations along sequence dimension
+        stds = torch.std(x, dim=-1)
         stds = 1 / stds
-        offset = x[:, :, 1:] - x[:, :, :seq_len-1]
-        # compute the sum
-        batch_loss = scale * torch.sum(  # sum along sequence length
-            torch.sum(                    # sum along channel dimension
-                torch.pow(                # square the inside
-                    self.prod(stds, offset), 2), dim=1), dim=-1)
+
+        # Calculate temporal differences
+        offset = x[:, :, 1:] - x[:, :, :-1]
+
+        # Compute scaled loss
+        weighted_offset = stds.unsqueeze(-1) * offset
+        batch_loss = scale * torch.sum(weighted_offset**2, dim=(1,2))
 
         return torch.mean(batch_loss)
 

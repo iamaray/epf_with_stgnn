@@ -1,19 +1,28 @@
-# from sklearn.pipeline import Pipeline
-
-# from data_processing.processing_classes import *
-# from data_processing.transformations_funcs import MADStandardScaler, ArcsinhTransformer
-# from data_processing.dataset_constructors import DatasetConstructor
-# from data_processing.processor import PreprocessData
-from models.pipelines import STGNNPipeline
+import torch
+import numpy as np
+import pandas as pd
+from models.fourier_gnn.model import FGN, construct_fgn
+from models.pipelines import FourierGNNPipeline
+from models.trainers.curriculum_trainer import PredLenCurriculumTrainer
+import itertools
 
 
 def main():
-    data_path = 'data/combined_dataset.csv'
+    pipeline = FourierGNNPipeline('data/combined_dataset.csv')
+    multi_step_data = pipeline(
+        target_feats=[f'LMP_{i}' for i in range(30)], pred_hours_list=[6, 12, 18, 24])
 
-    pipeline = STGNNPipeline('Configs/stgnn_config.yml')
+    models = []
+    for tr, te in multi_step_data:
+        data = next(iter(tr))
+        models.append(construct_fgn(data))
 
-    pipeline.preprocess(data_path=data_path, targets=[
-                        f'LMP_DIFF_{i}' for i in range(29)], aux_feats=[[f'S_{i}'] for i in range(29)])
+    trainer = PredLenCurriculumTrainer(models=models, epochs=60)
+    trainer.train(curriculum_loader=multi_step_data, use_ats=False)
+
+    trained_model = pipeline.load_model(model_path='results/final_model.pt')
+
+    pipeline.evaluate(model=trained_model)
 
 
 if __name__ == "__main__":
